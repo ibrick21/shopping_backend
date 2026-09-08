@@ -18,7 +18,7 @@ class UserDB(Base):
     back_populates="user"
     )
 
-    email: Mapped[str] = mapped_column(String)
+    email: Mapped[str] = mapped_column(String, unique = True)
     password_hash: Mapped[str] = mapped_column(String)
 
 class OrderDB(Base):
@@ -29,7 +29,7 @@ class OrderDB(Base):
         primary_key = True
     )
 
-    user_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int] = mapped_column(   
     Integer,
     ForeignKey("users.user_id")
     )

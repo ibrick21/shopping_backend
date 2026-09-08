@@ -5,15 +5,15 @@ from order.inventory import Inventory
 from order.payment_manager import PaymentManager
 from order.service import OrderService
 from order.payment import Payment
-from order.exceptions import InvalidOrderStatusError, OrderNotFoundError, UserNotFoundError
+from order.exceptions import InvalidOrderStatusError, OrderNotFoundError, UserNotFoundError,UserExistError
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from order.database import SessionLocal
 from .user_repository import UserRepository
-from order.models import User
+from .user_service import UserService
+from order.models import User, Product
 from .product_repository import ProductRepository
 from .product_service import ProductService
-from .models import Product
 
 
 app = FastAPI()
@@ -42,13 +42,20 @@ class CreateOrderRequest(BaseModel):
     product_id: int
     quantity: int
 
-class CreateUserRequest(BaseModel):
+class SignupRequest(BaseModel):
     name: str
+    email: str
+    password: str
 
 class CreateProductRequest(BaseModel):
     name: str
     price: int
     stock: int
+
+class UserResponse(BaseModel):
+    user_id: int
+    name: str
+    email: str
 
 def get_repository(
     session: Session = Depends(get_session)
@@ -83,15 +90,25 @@ def get_service(session: Session = Depends(get_session)):
 
     return service
 
+def get_user_service(session: Session = Depends(get_session)):
+
+
+    user_repository = UserRepository(session)
+
+    user_service = UserService(user_repository)
+
+    return user_service
+
 def get_product_service(
     session: Session = Depends(get_session)
 ):
     product_repository = ProductRepository(session)
+
     product_service = ProductService(product_repository)
 
     return product_service
 
-@app.post("/orders")
+@app.post("/order")
 def create_order(
     request: CreateOrderRequest,
     service: OrderService = Depends(get_service)
@@ -112,20 +129,29 @@ def create_order(
         )
 
   
-@app.post("/users")
-def create_user(
-    request: CreateUserRequest,
-    user_repository: UserRepository = Depends(get_user_repository)
+@app.post("/auth/signup", response_model = UserResponse)
+def sign_up(
+    request: SignupRequest,
+    user_service: UserService = Depends(get_user_service)
 ):
+
+    try:
+        user = user_service.sign_up(
+            name = request.name,
+            email = request.email,
+            password = request.password
+        )
+
+        return user
     
-    user = User(
-        name=request.name
-    )
+    except UserExistError:
+        raise HTTPException(
+            status_code = 409,
+            detail = "Email already exists"
+        )
 
-    user = user_repository.add_user(user)
-
-    return user
-
+    
+    
 @app.post("/products")
 def create_product(
     request: CreateProductRequest,

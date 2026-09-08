@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .orm_models import UserDB
 from .models import User
@@ -38,3 +39,15 @@ class UserRepository:
         user.user_id = user_db.user_id
 
         return user
+
+    def find_by_email(self, email: str):
+        stmt = select(UserDB).where(
+            UserDB.email == email
+    )
+        user_db = self.session.scalar(stmt)
+
+        if user_db is None:
+            return None
+
+        return self._user_db_to_user(user_db)
+        

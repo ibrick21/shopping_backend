@@ -15,3 +15,6 @@ class UserNotFoundError(Exception):
 
 class ProductNotFoundError(Exception):
     pass
+
+class UserExistError(Exception):
+    pass
