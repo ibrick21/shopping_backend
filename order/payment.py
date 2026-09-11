@@ -1,23 +1,21 @@
+from dataclasses import dataclass
+from enum import Enum
+
+class PaymentStatus(Enum):
+    PAID = "paid"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+
+@dataclass
 class Payment:
-    def __init__(self, balance):
-        if balance < 0:
-            raise ValueError("잔액은 0원 이상이어야 합니다.")
+    order_id: int
+    amount: int
+    status: PaymentStatus
+    payment_id: int | None = None
 
-        self.balance = balance
+    def refund(self):
+        if self.status != PaymentStatus.PAID:
+            return False
 
-    def pay(self, amount: int) -> bool:
-        if amount <= 0:
-            raise ValueError("결제 금액은 1원 이상이어야 합니다.")
-        
-        if amount <= self.balance:
-            self.balance -= amount
-            return True
-
-        return False 
-
-    def refund(self, amount: int) -> bool:
-        if amount <= 0: 
-            raise ValueError("결제 금액은 1원 이상이어야 합니다.")
-
-        self.balance += amount
+        self.status = PaymentStatus.REFUNDED
         return True

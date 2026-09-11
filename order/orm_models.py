@@ -45,9 +45,10 @@ class OrderDB(Base):
     user: Mapped["UserDB"] = relationship(
         back_populates="orders"
     )
-    product: Mapped["ProductDB"] = relationship(
+    product: Mapped[list["ProductDB"]] = relationship(
          back_populates = "orders"
     )
+
 
 
 class ProductDB(Base):
@@ -66,3 +67,16 @@ class ProductDB(Base):
         back_populates = "product"
     )
 
+class PaymentDB(Base):
+    __tablename__ = "payments"
+
+    payment_id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key = True
+    )
+    order_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("orders.order_id")
+    )
+    amount: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String)

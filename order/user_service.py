@@ -1,7 +1,8 @@
 from .models import User
 from .user_repository import UserRepository
 from .security import hash_password
-from .exceptions import UserExistError
+from .exceptions import UserExistError, UserNotFoundError, InvalidCredentialsError
+from. security import verify_password, create_access_token
 
 class UserService:
     def __init__(self, user_repository: UserRepository):
@@ -25,3 +26,16 @@ class UserService:
         self.user_repository.add_user(user)
 
         return user
+
+    def login(self, email: str, password: str):
+        user = self.user_repository.find_by_email(email)
+
+        if user is None:
+            raise InvalidCredentialsError("로그인 실패")
+
+        if not verify_password(password, user.password_hash):
+            raise InvalidCredentialsError("로그인 실패")
+
+
+        token = create_access_token(user.user_id)
+        return token 

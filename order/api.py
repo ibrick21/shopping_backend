@@ -1,22 +1,23 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from order.repository import OrderRepository
-from order.inventory import Inventory
-from order.payment_manager import PaymentManager
 from order.service import OrderService
-from order.payment import Payment
-from order.exceptions import InvalidOrderStatusError, OrderNotFoundError, UserNotFoundError,UserExistError
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from order.database import SessionLocal
-from .user_repository import UserRepository
 from .user_service import UserService
 from order.models import User, Product
+from .user_repository import UserRepository
 from .product_repository import ProductRepository
+from .payment_repository import PaymentRepository
 from .product_service import ProductService
-
-
+from .security import decode_access_token
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from order.exceptions import PaymentNotFoundError, AmountExceededError, InvalidOrderStatusError, OrderNotFoundError, UserNotFoundError,UserExistError,InvalidCredentialsError, InvalidTokenError, OrderAccessDeniedError, ProductNotFoundError
+from fastapi import Depends
 app = FastAPI()
+
+bearer_scheme = HTTPBearer()
 
 def get_session():
     session = SessionLocal()
@@ -28,22 +29,16 @@ def get_session():
         session.close()
 
 
-inventory = Inventory()
-payment_manager = PaymentManager()
-
-jung_payment = Payment(140000)
-kim_payment = Payment(70000)
-payment_manager.add_payment("Kim", kim_payment)
-payment_manager.add_payment("Jung", jung_payment)
-inventory.add_stock("Keyboard", 10)
-
 class CreateOrderRequest(BaseModel):
-    user_id: int
     product_id: int
     quantity: int
 
 class SignupRequest(BaseModel):
     name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
     email: str
     password: str
 
@@ -82,11 +77,13 @@ def get_service(session: Session = Depends(get_session)):
 
     repository = OrderRepository(session)
 
+    payment_repository = PaymentRepository(session)
+
     user_repository = UserRepository(session)
 
     product_repository = ProductRepository(session)
 
-    service =  OrderService(repository, inventory, payment_manager, user_repository, product_repository)
+    service =  OrderService(repository, payment_repository, user_repository, product_repository)
 
     return service
 
@@ -108,25 +105,33 @@ def get_product_service(
 
     return product_service
 
-@app.post("/order")
-def create_order(
-    request: CreateOrderRequest,
-    service: OrderService = Depends(get_service)
+
+def get_current_user(
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+        user_repository : UserRepository = Depends(get_user_repository)
 ):
+
+
     try:
+        token = credentials.credentials
 
-        order = service.create_order(
-            request.user_id,
-            request.product_id,
-            request.quantity
-        )
+        user_id = decode_access_token(token)
+        user = user_repository.find_user(user_id)
 
-        return order
-    except UserNotFoundError:
+        if user is None:
+            raise HTTPException(
+                status_code = 401, 
+                detail = "유효하지 않은 토큰"
+            )
+
+        return user
+
+    except InvalidTokenError:
         raise HTTPException(
-            status_code = 404,
-            detail = "User Not Found"
+            status_code = 401,
+            detail = "유효하지 않은 토큰"
         )
+
 
   
 @app.post("/auth/signup", response_model = UserResponse)
@@ -150,8 +155,48 @@ def sign_up(
             detail = "Email already exists"
         )
 
-    
-    
+@app.post("/auth/login")
+def login(
+    request: LoginRequest,
+    service: UserService = Depends(get_user_service)
+):
+
+    try:
+        token = service.login(request.email,request.password)
+
+        return {
+            "access_token": token,
+            "token_type": "bearer"
+        }
+
+    except InvalidCredentialsError:
+        raise HTTPException(
+            status_code = 401,
+            detail = "로그인 실패"
+        )
+
+
+@app.post("/order")
+def create_order(
+    request: CreateOrderRequest,
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+
+        order = service.create_order(
+            current_user.user_id,
+            request.product_id,
+            request.quantity
+        )
+
+        return order
+    except UserNotFoundError:
+        raise HTTPException(
+            status_code = 404,
+            detail = "User Not Found"
+        )
+
 @app.post("/products")
 def create_product(
     request: CreateProductRequest,
@@ -166,66 +211,170 @@ def create_product(
 
     return product
 
-@app.get("/orders/{order_id}")
-def get_order(
-    order_id: int, 
-    repository: OrderRepository = Depends(get_repository)
+@app.post("/orders/{order_id}/pay")
+def pay_order(
+    order_id: int,
+    service: OrderService = Depends(get_service),
+     current_user: User = Depends(get_current_user)
 ):
+    try:
+        service.pay_order(order_id, current_user.user_id)
+
+        return {"message": "Payment successful"}
     
-
-    order = repository.find_order(order_id)
-
-    if order is None:
+    except OrderNotFoundError:
         raise HTTPException(
             status_code=404,
             detail="Order not found"
         )
 
-    return order    
+    except OrderAccessDeniedError:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden"
+        )
 
-@app.post("/orders/{order_id}/pay")
-def pay_order(
-    order_id: int,
-    service: OrderService = Depends(get_service)
-):
-    try:
-        service.pay_order(order_id)
-
-        return {"message": "Payment successful"}
     except InvalidOrderStatusError:
         raise HTTPException(
-            status_code = 409,
-            detail = "Order cannot be paid in current status"
+            status_code=400,
+            detail="Order cannot be paid"
         )
+
+    except AmountExceededError:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment amount exceeded"
+        )
+
+
+@app.get("/me")
+def get_me(
+    current_user: User = Depends(get_current_user)
+):
+    return current_user
+
+@app.get("/orders")
+def get_my_orders(
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
+):
+    return list(
+        service.get_my_orders(current_user.user_id)
+    )
+
+
+@app.get("/orders/{order_id}")
+def get_order(
+    order_id: int, 
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
+):
+    
+    try:
+        order = service.get_order(order_id, current_user.user_id)
+
+        return order
+
     except OrderNotFoundError:
         raise HTTPException(
             status_code = 404,
             detail = "Order not found"
         )
 
-    return {"message": "Payment successful"}
+    except OrderAccessDeniedError:
+        raise HTTPException(
+            status_code = 403,
+            detail = "Forbidden"
+        )   
 
 @app.get("/orders")
-def get_orders(
-    min_price: int,
-    repository: OrderRepository = Depends(get_repository)
+def get_my_orders(
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
 ):
-    
-    orders = repository.get_orders_by_min_price(min_price)
-
-    return list(orders)
+    return list(
+        service.get_my_orders(current_user.user_id)
+    )
 
 @app.delete("/orders/{order_id}")
 def delete_order(
     order_id: int,
-    repository: OrderRepository = Depends(get_repository)
+    service: OrderService = Depends(get_service),
+    current_user : User = Depends(get_current_user)
 ):
-    
-    result = repository.delete_order(order_id)
 
-    if not result:
-        raise HTTPException(
-            status_code = 404,
-            detail = "Order not found"
+    try:
+        service.cancel_order(
+            order_id,
+            current_user.user_id
         )
-    return {"message": "Order deleted"}
+
+        return {"message": "Order deleted"}
+
+    except OrderNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    except OrderAccessDeniedError:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden"
+        )
+
+    except ProductNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )
+
+    except InvalidOrderStatusError:
+        raise HTTPException(
+            status_code=400,
+            detail="Order cannot be canceled"
+        )
+
+@app.post("/orders/{order_id}/refund")
+def refund_order(
+    order_id: int,
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        service.refund_order(
+            order_id,
+            current_user.user_id
+        )
+
+        return {"message": "Refund successful"}
+
+    except OrderNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    except OrderAccessDeniedError:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden"
+        )
+
+    except InvalidOrderStatusError:
+        raise HTTPException(
+            status_code=400,
+            detail="Order cannot be refunded"
+        )
+
+    except PaymentNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment not found"
+        )
+
+    except ProductNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )

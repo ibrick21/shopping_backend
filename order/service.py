@@ -1,17 +1,14 @@
-from .models import Order, OrderStatus
-from .inventory_protocol import InventoryProtocol
-from .repository_protocol import RepositoryProtocol
-from .payment_manager_protocol import PaymentManagerProtocol
-from .exceptions import OrderNotFoundError, AmountExceededError, InvalidOrderStatusError, PaymentNotFoundError,UserNotFoundError, ProductNotFoundError
 from .decorators import logger
-from .payment_manager import PaymentManager
+from .models import Order
+from .payment import Payment, PaymentStatus
+from .exceptions import OrderNotFoundError, AmountExceededError, InvalidOrderStatusError, PaymentNotFoundError,UserNotFoundError, ProductNotFoundError, OrderAccessDeniedError, InsufficientStockError
+
 
 
 class OrderService:
-    def __init__(self,repository, inventory, payment_manager, user_repository, product_repository):
+    def __init__(self,repository, payment_repository, user_repository, product_repository):
         self.repository = repository
-        self.inventory = inventory
-        self.payment_manager = payment_manager
+        self.payment_repository = payment_repository
         self.user_repository = user_repository
         self.product_repository = product_repository
 
@@ -27,6 +24,9 @@ class OrderService:
 
         if product is None:
             raise ProductNotFoundError("상품을 찾을 수 없습니다.")
+
+        if product.stock < quantity:
+            raise InsufficientStockError("재고가 부족합니다.")
         
         order = Order(
             user_id = user_id,
@@ -35,42 +35,55 @@ class OrderService:
             quantity = quantity
         ) 
 
-        self.inventory.decrease_stock(product.name, quantity)
+        self.product_repository.decrease_stock(product_id, quantity)
           
         self.repository.add_order(order)
 
         return order
-        
-    
-    @logger
-    def pay_order(self, order_id: int) -> bool:
+
+    def get_order(self, order_id: int, user_id: int) -> Order:
         order = self.repository.find_order(order_id)
 
         if order is None:
             raise OrderNotFoundError("주문을 찾을 수 없습니다.")
 
+        if order.user_id != user_id:
+            raise OrderAccessDeniedError("주문에 접근할 권한이 없습니다.")
+
+        return order
+
+    def get_my_orders(self, user_id: int):
+        return self.repository.get_orders_by_user(user_id)
+    
+    @logger
+    def pay_order(self, order_id: int, user_id: int) -> bool:
+
+        order = self.get_order(order_id, user_id)
+
         if not order.can_pay():
-            raise InvalidOrderStatusError("현재 주문 상태에서는 결제할 수 없습니다.")
+            raise InvalidOrderStatusError(
+                "현재 주문 상태에서는 결제할 수 없습니다."
+            )
 
-        payment = self.payment_manager.find_payment(order.customer)
-
-        if payment is None:
-            raise PaymentNotFoundError("고객의 결제 정보를 찾을 수 없습니다.")
-
-        total_price = order.price * order.quantity 
+        total_price = order.price * order.quantity
 
         if total_price >= 200000:
-            raise AmountExceededError("10만 원 이상 주문은 바로 결제할 수 없습니다.")
-        
-        payment_success = payment.pay(total_price)
+            raise AmountExceededError(
+                "20만 원 이상 주문은 바로 결제할 수 없습니다."
+            )
 
-        if payment_success:
-            order.pay()
-            self.repository.update_order(order)
-            return True
+        payment = Payment(
+            order_id=order.order_id,
+            amount=total_price,
+            status=PaymentStatus.PAID
+        )
 
-        self.cancel_order(order_id)
-        return False
+        self.payment_repository.add_payment(payment)
+
+        order.pay()
+        self.repository.update_order(order)
+
+        return True
 
     def start_shipping(self, order_id: int) -> bool:
         order = self.repository.find_order(order_id)
@@ -81,6 +94,7 @@ class OrderService:
         if not order.start_shipping():
             raise InvalidOrderStatusError
 
+        self.repository.update_order(order)
         return True
 
     def complete_delivery(self, order_id: int) -> bool:
@@ -91,74 +105,72 @@ class OrderService:
 
         if not order.complete_delivery():
             raise InvalidOrderStatusError
+        
+        self.repository.update_order(order)
 
         return True
         
     @logger
-    def cancel_order(self, order_id: int) -> bool:
+    def cancel_order(self, order_id: int, user_id: int) -> bool:
 
-        order = self.repository.find_order(order_id)
+        order = self.get_order(order_id, user_id)
 
-        if order is None:
-            raise OrderNotFoundError("주문을 찾을 수 없습니다.")
+        product = self.product_repository.find_product(order.product_id)
+
+        if product is None:
+            raise ProductNotFoundError("상품을 찾을 수 없습니다.")
         
+ 
         if order.cancel():
+
             self.repository.update_order(order)
-            self.inventory.add_stock(order.product, order.quantity)
+
+            self.product_repository.increase_stock(product.product_id, order.quantity)
+            
             return True
 
-    def refund_order(self, order_id: int) -> bool:
-        order = self.repository.find_order(order_id)
+        raise InvalidOrderStatusError("현재 주문 상태에서는 취소할 수 없습니다.")
 
-        if order is None:
-            raise OrderNotFoundError
+
+    def refund_order(self, order_id: int ,user_id: int) -> bool:
+
+        order = self.get_order(order_id, user_id)
 
         if not order.can_refund():
-            raise InvalidOrderStatusError
+            raise InvalidOrderStatusError(
+                "현재 주문 상태에서는 환불할 수 없습니다."
+            )
 
-        payment = self.payment_manager.find_payment(order.customer)
+        payment = self.payment_repository.find_paid_payment(
+            order_id
+        )
 
         if payment is None:
-            raise PaymentNotFoundError
+            raise PaymentNotFoundError(
+                "결제 기록을 찾을 수 없습니다."
+            )
 
-        total_price = order.price * order.quantity
+        payment.refund()
 
-        payment.refund(total_price)
+        self.payment_repository.update_payment(payment)
 
-        self.inventory.add_stock(
-            order.product,
+        product = self.product_repository.find_product(
+            order.product_id
+        )
+
+        if product is None:
+            raise ProductNotFoundError(
+                "상품을 찾을 수 없습니다."
+            )
+
+        self.product_repository.increase_stock(
+            order.product_id,
             order.quantity
         )
 
         order.cancel()
+        self.repository.update_order(order)
 
         return True
-    def change_order_product(
-        self,
-        order_id: int,
-        new_product: str
-    ) -> bool:
-        order = self.repository.find_order(order_id)
-
-        if order is None:
-            return False
-
-        return order.change_product(new_product)
-
-    def get_paid_orders(self):
-            return self.repository.get_paid_orders()
-            
-
-
-    def get_orders_by_status(self, status: OrderStatus):
-        return self.repository.get_orders_by_status(status)
-
-    def get_orders_by_min_price(self, min_price: int):
-        return self.repository.get_orders_by_min_price(min_price)
-
-    def get_orders(self, status: OrderStatus, min_price: int):
-        for order in self.repository.orders:
-            if order.status == status and order.price >= min_price:
-                yield order
-
+    
     

@@ -1,4 +1,3 @@
-from .database import SessionLocal
 from .orm_models import OrderDB
 from .models import Order, OrderStatus
 from sqlalchemy import select
@@ -82,3 +81,13 @@ class OrderRepository:
         
         for order_db in order_dbs:
             yield self._order_db_to_order(order_db)     
+
+    def get_orders_by_user(self, user_id: int):
+        stmt = select(OrderDB).where(
+            OrderDB.user_id == user_id
+        )
+
+        order_dbs = self.session.scalars(stmt)
+
+        for order_db in order_dbs:
+            yield self._order_db_to_order(order_db)

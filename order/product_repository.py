@@ -39,4 +39,18 @@ class ProductRepository:
         product.product_id = product_db.product_id
 
         return product
-             
+
+    def decrease_stock(self, product_id: int, quantity: int):
+        product_db = self.session.get(ProductDB, product_id)
+
+        product_db.stock -= quantity
+
+        self.session.commit()
+
+        
+    def increase_stock(self, product_id: int, quantity: int):
+        product_db = self.session.get(ProductDB, product_id)
+
+        product_db.stock += quantity
+        
+        self.session.commit()
