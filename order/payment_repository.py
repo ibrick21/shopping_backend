@@ -1,9 +1,9 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .orm_models import PaymentDB
-from .payment import Payment
-from sqlalchemy import select
 from .payment import Payment, PaymentStatus
+
 
 class PaymentRepository:
     def __init__(self, session: Session):
@@ -18,7 +18,7 @@ class PaymentRepository:
         )
 
         self.session.add(payment_db)
-        self.session.commit()
+        self.session.flush()
 
         payment.payment_id = payment_db.payment_id
 
@@ -49,4 +49,4 @@ class PaymentRepository:
 
         payment_db.status = payment.status.value
 
-        self.session.commit()
+        

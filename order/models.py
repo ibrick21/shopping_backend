@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
+
 from .exceptions import InvalidOrderStatusError
+
 
 class OrderStatus(Enum):
     PENDING = "pending"
@@ -25,7 +27,6 @@ class Order:
         if self.price <= 0:
             raise ValueError("가격은 0보다 커야 합니다.")
 
-    def __post_init__(self):
         if self.order_id is not None and self.order_id <= 0:
             raise ValueError("주문 ID는 1 이상이어야 합니다.")
 
@@ -40,30 +41,26 @@ class Order:
         return True
 
     def can_pay(self) -> bool:
-        if self.status == OrderStatus.PENDING:
-            return True
-        return False
+        return self.status == OrderStatus.PENDING
+      
 
     def cancel(self):
-        if self.status == OrderStatus.PENDING or self.status == OrderStatus.PAID:
+        if self.status == OrderStatus.PENDING:
             self.status = OrderStatus.CANCELED
             return True
 
         return False
 
     def can_refund(self) -> bool:
-        if self.status == OrderStatus.PAID:
-            return True
+        return self.status == OrderStatus.PAID
 
-        return False
+    def refund(self):
+        if not self.can_refund():
+            return False
 
-    def change_product(self, new_product: str) -> bool:  
-        if self.status == OrderStatus.PENDING and new_product !="":
-            self.product = new_product
-            return True
-
-        return False  
-
+        self.status = OrderStatus.CANCELED
+        return True
+    
     def start_shipping(self):
             if self.status == OrderStatus.PAID: 
     

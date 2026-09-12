@@ -1,5 +1,5 @@
 from .models import Product
-from .product_repository import ProductRepository
+
 
 class ProductService:
     def __init__(self, product_repository):

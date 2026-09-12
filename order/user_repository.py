@@ -1,7 +1,9 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .orm_models import UserDB
+
 from .models import User
+from .orm_models import UserDB
+
 
 class UserRepository:
     def __init__(self, session: Session):
@@ -34,7 +36,7 @@ class UserRepository:
         )
 
         self.session.add(user_db)
-        self.session.commit()
+        self.session.flush()
 
         user.user_id = user_db.user_id
 

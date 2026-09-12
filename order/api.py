@@ -1,32 +1,34 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-from order.repository import OrderRepository
-from order.service import OrderService
-from fastapi import Depends
 from sqlalchemy.orm import Session
-from order.database import SessionLocal
-from .user_service import UserService
-from order.models import User, Product
-from .user_repository import UserRepository
-from .product_repository import ProductRepository
+
+from .database import get_session
+from .exceptions import (
+    AmountExceededError,
+    InvalidCredentialsError,
+    InvalidOrderStatusError,
+    InvalidTokenError,
+    OrderAccessDeniedError,
+    OrderNotFoundError,
+    PaymentNotFoundError,
+    ProductNotFoundError,
+    UserExistError,
+    UserNotFoundError,
+)
+from .models import User
 from .payment_repository import PaymentRepository
+from .product_repository import ProductRepository
 from .product_service import ProductService
+from .repository import OrderRepository
 from .security import decode_access_token
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from order.exceptions import PaymentNotFoundError, AmountExceededError, InvalidOrderStatusError, OrderNotFoundError, UserNotFoundError,UserExistError,InvalidCredentialsError, InvalidTokenError, OrderAccessDeniedError, ProductNotFoundError
-from fastapi import Depends
+from .service import OrderService
+from .user_repository import UserRepository
+from .user_service import UserService
+
 app = FastAPI()
 
 bearer_scheme = HTTPBearer()
-
-def get_session():
-    session = SessionLocal()
-
-    try:
-        yield session
-
-    finally:
-        session.close()
 
 
 class CreateOrderRequest(BaseModel):
@@ -246,95 +248,6 @@ def pay_order(
             detail="Payment amount exceeded"
         )
 
-
-@app.get("/me")
-def get_me(
-    current_user: User = Depends(get_current_user)
-):
-    return current_user
-
-@app.get("/orders")
-def get_my_orders(
-    service: OrderService = Depends(get_service),
-    current_user: User = Depends(get_current_user)
-):
-    return list(
-        service.get_my_orders(current_user.user_id)
-    )
-
-
-@app.get("/orders/{order_id}")
-def get_order(
-    order_id: int, 
-    service: OrderService = Depends(get_service),
-    current_user: User = Depends(get_current_user)
-):
-    
-    try:
-        order = service.get_order(order_id, current_user.user_id)
-
-        return order
-
-    except OrderNotFoundError:
-        raise HTTPException(
-            status_code = 404,
-            detail = "Order not found"
-        )
-
-    except OrderAccessDeniedError:
-        raise HTTPException(
-            status_code = 403,
-            detail = "Forbidden"
-        )   
-
-@app.get("/orders")
-def get_my_orders(
-    service: OrderService = Depends(get_service),
-    current_user: User = Depends(get_current_user)
-):
-    return list(
-        service.get_my_orders(current_user.user_id)
-    )
-
-@app.delete("/orders/{order_id}")
-def delete_order(
-    order_id: int,
-    service: OrderService = Depends(get_service),
-    current_user : User = Depends(get_current_user)
-):
-
-    try:
-        service.cancel_order(
-            order_id,
-            current_user.user_id
-        )
-
-        return {"message": "Order deleted"}
-
-    except OrderNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail="Order not found"
-        )
-
-    except OrderAccessDeniedError:
-        raise HTTPException(
-            status_code=403,
-            detail="Forbidden"
-        )
-
-    except ProductNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail="Product not found"
-        )
-
-    except InvalidOrderStatusError:
-        raise HTTPException(
-            status_code=400,
-            detail="Order cannot be canceled"
-        )
-
 @app.post("/orders/{order_id}/refund")
 def refund_order(
     order_id: int,
@@ -378,3 +291,84 @@ def refund_order(
             status_code=404,
             detail="Product not found"
         )
+
+    
+@app.get("/me", response_model = UserResponse)
+def get_me(
+    current_user: User = Depends(get_current_user)
+):
+    return current_user
+
+@app.get("/orders")
+def get_my_orders(
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
+):
+    return list(
+        service.get_my_orders(current_user.user_id)
+    )
+
+@app.get("/orders/{order_id}")
+def get_order(
+    order_id: int, 
+    service: OrderService = Depends(get_service),
+    current_user: User = Depends(get_current_user)
+):
+    
+    try:
+        order = service.get_order(order_id, current_user.user_id)
+
+        return order
+
+    except OrderNotFoundError:
+        raise HTTPException(
+            status_code = 404,
+            detail = "Order not found"
+        )
+
+    except OrderAccessDeniedError:
+        raise HTTPException(
+            status_code = 403,
+            detail = "Forbidden"
+        )   
+
+
+@app.delete("/orders/{order_id}")
+def cancel_order(
+    order_id: int,
+    service: OrderService = Depends(get_service),
+    current_user : User = Depends(get_current_user)
+):
+
+    try:
+        service.cancel_order(
+            order_id,
+            current_user.user_id
+        )
+
+        return {"message": "Order Canceled"}
+
+    except OrderNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    except OrderAccessDeniedError:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden"
+        )
+
+    except ProductNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )
+
+    except InvalidOrderStatusError:
+        raise HTTPException(
+            status_code=400,
+            detail="Order cannot be canceled"
+        )
+

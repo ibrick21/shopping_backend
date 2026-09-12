@@ -1,9 +1,10 @@
 import os
-import jwt
+from datetime import datetime, timedelta, timezone
 
+import jwt
 from dotenv import load_dotenv
 from pwdlib import PasswordHash
-from datetime import datetime, timedelta, timezone
+
 from .exceptions import InvalidTokenError
 
 load_dotenv()

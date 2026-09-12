@@ -1,8 +1,16 @@
 from .decorators import logger
-from .models import Order
+from .exceptions import (
+    AmountExceededError,
+    InsufficientStockError,
+    InvalidOrderStatusError,
+    OrderAccessDeniedError,
+    OrderNotFoundError,
+    PaymentNotFoundError,
+    ProductNotFoundError,
+    UserNotFoundError,
+)
+from .models import Order, OrderStatus
 from .payment import Payment, PaymentStatus
-from .exceptions import OrderNotFoundError, AmountExceededError, InvalidOrderStatusError, PaymentNotFoundError,UserNotFoundError, ProductNotFoundError, OrderAccessDeniedError, InsufficientStockError
-
 
 
 class OrderService:
@@ -131,19 +139,16 @@ class OrderService:
 
         raise InvalidOrderStatusError("현재 주문 상태에서는 취소할 수 없습니다.")
 
-
-    def refund_order(self, order_id: int ,user_id: int) -> bool:
+    def refund_order(self, order_id: int, user_id: int) -> bool:
 
         order = self.get_order(order_id, user_id)
+
 
         if not order.can_refund():
             raise InvalidOrderStatusError(
                 "현재 주문 상태에서는 환불할 수 없습니다."
             )
-
-        payment = self.payment_repository.find_paid_payment(
-            order_id
-        )
+        payment = self.payment_repository.find_paid_payment(order_id)
 
         if payment is None:
             raise PaymentNotFoundError(
@@ -168,7 +173,7 @@ class OrderService:
             order.quantity
         )
 
-        order.cancel()
+        order.refund()
         self.repository.update_order(order)
 
         return True
