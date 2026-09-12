@@ -9,7 +9,15 @@ FastAPI와 PostgreSQL을 기반으로 구현한 쇼핑몰 백엔드 프로젝트
 트랜잭션, Service/Repository 계층 분리를 직접 구현하는 것을 목표로
 했습니다.
 
-주요 기능
+
+## Deployment
+
+- API: https://shopping-backend-94la.onrender.com
+- Swagger UI: https://shopping-backend-94la.onrender.com/docs
+
+
+
+<주요 기능>
 
 회원가입 및 로그인
 
