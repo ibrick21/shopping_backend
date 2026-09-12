@@ -1,3 +1,5 @@
+https://shopping-backend-94la.onrender.com/docs
+
 Shopping Backend
 
 FastAPI와 PostgreSQL을 기반으로 구현한 쇼핑몰 백엔드 프로젝트입니다.
