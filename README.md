@@ -74,23 +74,27 @@ Fake Repository를 활용한 OrderService 단위 테스트
 
 주문, 권한, 결제, 취소, 환불 시나리오 검증
 
-Tech Stack
+## Tech Stack
 
-Category           Technology
+| Category | Technology |
+|---|---|
+| Language | Python |
+| Web Framework | FastAPI |
+| Database | PostgreSQL |
+| ORM | SQLAlchemy |
+| Migration | Alembic |
+| Validation | Pydantic |
+| Authentication | JWT, HTTP Bearer |
+| Password Hashing | pwdlib (Argon2) |
+| Testing | pytest |
+| Code Quality | Ruff |
+| Deployment | Render |
 
-Language           Python
-Web Framework      FastAPI
-Database           PostgreSQL
-ORM                SQLAlchemy
-Migration          Alembic
-Validation         Pydantic
-Authentication     JWT, HTTP Bearer
-Password Hashing   pwdlib
-Testing            pytest
-Code Quality       Ruff
+---
 
-Architecture
+## Architecture
 
+```text
 Client
   │
   │ HTTP Request
@@ -116,7 +120,46 @@ SQLAlchemy ORM
   │
   ▼
 PostgreSQL
+```
 
+---
+
+## Project Structure
+
+```text
+shopping_backend/
+├── alembic/
+│   └── versions/              # DB migration history
+├── order/
+│   ├── api.py                 # FastAPI endpoints / DI
+│   ├── database.py            # Engine, Session, transaction lifecycle
+│   ├── models.py              # Domain models
+│   ├── orm_models.py          # SQLAlchemy ORM models
+│   ├── service.py             # Order business logic
+│   ├── user_service.py        # Signup / login logic
+│   ├── product_service.py     # Product business logic
+│   ├── repository.py          # Order persistence
+│   ├── user_repository.py     # User persistence
+│   ├── product_repository.py  # Product persistence
+│   ├── payment_repository.py  # Payment persistence
+│   ├── payment.py             # Payment domain model
+│   ├── security.py            # Password hashing / JWT
+│   ├── exceptions.py          # Domain exceptions
+│   └── decorators.py
+├── test/
+│   └── test_order_service.py  # Order service unit tests
+├── alembic.ini
+├── requirements.txt
+├── README.md
+└── .gitignore
+```
+
+---
+
+## Deployment
+
+- API: `https://shopping-backend-94la.onrender.com`
+- Swagger UI: `https://shopping-backend-94la.onrender.com/docs`
 API 계층은 HTTP 요청/응답과 예외 변환을 담당하고, Service 계층은
 주문·결제·재고·권한 등의 비즈니스 규칙을 담당합니다. Repository 계층은
 SQLAlchemy를 이용한 영속성 처리를 담당하도록 분리했습니다.
